@@ -9,7 +9,7 @@ namespace Oxide.Plugins
         #region Declarations
         const string perm = "PersonalFarm.use";
         public float itemspacing = 1f;
-        public Dictionary<string,string> PlaceAnywhere = new Dictionary<string, string> { { "furnace.large", "assets/prefabs/deployable/furnace.large/furnace.large.prefab" }, { "refinery", "assets/prefabs/deployable/oil refinery/refinery_small_deployed.prefab" } };
+        public Dictionary<string, string> PlaceAnywhere = new Dictionary<string, string> { { "furnace.large", "assets/prefabs/deployable/furnace.large/furnace.large.prefab" }, { "refinery", "assets/prefabs/deployable/oil refinery/refinery_small_deployed.prefab" } };
         #endregion
 
         #region Hooks
@@ -29,7 +29,7 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            foreach (KeyValuePair<string,string> shortname in PlaceAnywhere)
+            foreach (KeyValuePair<string, string> shortname in PlaceAnywhere)
             {
                 if (heldEntity.info.shortname.Contains(shortname.Key))
                 {
@@ -41,10 +41,10 @@ namespace Oxide.Plugins
                     else
                     {
                         return;
-                    }                   
+                    }
                 }
             }
-        }
+        }  
         #endregion
 
         private bool PlaceItem(BasePlayer player, string Selected)
@@ -88,11 +88,15 @@ namespace Oxide.Plugins
             var hits = Physics.SphereCastAll(pos, radius, Vector3.up);
             foreach (var hit in hits)
             {
-                foreach (KeyValuePair<string, string> Itemcheck in PlaceAnywhere)
+                try
                 {
-                    if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
-                        return false;
+                    foreach (KeyValuePair<string, string> Itemcheck in PlaceAnywhere)
+                    {
+                        if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
+                            return false;
+                    }
                 }
+                catch { }
             }
             return true;
         }
