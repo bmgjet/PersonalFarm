@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("PersonalFarm", "bmgjet", "1.0.0")]
+    [Info("PersonalFarm", "bmgjet", "1.0.1")]
     class PersonalFarm : RustPlugin
     {
         #region Declarations
@@ -44,7 +44,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
-        }  
+        }
         #endregion
 
         private bool PlaceItem(BasePlayer player, string Selected)
@@ -88,15 +88,14 @@ namespace Oxide.Plugins
             var hits = Physics.SphereCastAll(pos, radius, Vector3.up);
             foreach (var hit in hits)
             {
-                try
+                if (hit.GetEntity() != null)
                 {
                     foreach (KeyValuePair<string, string> Itemcheck in PlaceAnywhere)
                     {
-                        if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
-                            return false;
+                            if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
+                                return false;
                     }
                 }
-                catch { }
             }
             return true;
         }
