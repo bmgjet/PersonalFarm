@@ -25,8 +25,8 @@ namespace Oxide.Plugins
             return new PluginConfig
             {
                 itemspacing = 1.8f, //Foundation = 3x3
-                itemlist = new Dictionary<string, string> 
-                { 
+                itemlist = new Dictionary<string, string>
+                {
                     { "fishtrap.small", "assets/prefabs/deployable/survivalfishtrap/survivalfishtrap.deployed.prefab" },
                     { "water.catcher.small", "assets/prefabs/deployable/water catcher/water_catcher_small.prefab" },
                     { "furnace.large", "assets/prefabs/deployable/furnace.large/furnace.large.prefab" },
@@ -182,11 +182,13 @@ namespace Oxide.Plugins
         private class PersonalFarmAddon : MonoBehaviour
         {
             private BaseEntity FarmEntity;
+            
 
             private void Awake()
             {
                 FarmEntity = GetComponent<BaseEntity>();
                 InvokeRepeating("CheckGround", 5f, 5f);
+                FarmEntity.name = "PersonalFarm";
             }
 
             private void CheckGround()
