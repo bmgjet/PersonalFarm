@@ -1,30 +1,68 @@
 using System.Collections.Generic;
 using Facepunch;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("PersonalFarm", "bmgjet", "1.0.3")]
+    [Info("PersonalFarm", "bmgjet", "1.0.4")]
     class PersonalFarm : RustPlugin
     {
         #region Declarations
         const string perm = "PersonalFarm.use";
-        public float itemspacing = 1.5f;
-        private const string PREFAB_CRATER_OIL = "assets/prefabs/tools/surveycharge/survey_crater_oil.prefab";
-        public Dictionary<string, string> PlaceAnywhere = new Dictionary<string, string> { { "fishtrap.small", "assets/prefabs/deployable/survivalfishtrap/survivalfishtrap.deployed.prefab" }, { "water.catcher.small", "assets/prefabs/deployable/water catcher/water_catcher_small.prefab" }, { "furnace.large", "assets/prefabs/deployable/furnace.large/furnace.large.prefab" }, { "refinery", "assets/prefabs/deployable/oil refinery/refinery_small_deployed.prefab" } };
+        private static PluginConfig config;
+        #endregion
+
+        #region Configuration
+        private class PluginConfig
+        {
+            [JsonProperty(PropertyName = "Item Spacing : ")] public float itemspacing { get; set; }
+            [JsonProperty(PropertyName = "Items To Allow Indoors: ")] public Dictionary<string, string> itemlist { get; set; }
+        }
+
+        private PluginConfig GetDefaultConfig()
+        {
+            return new PluginConfig
+            {
+                itemspacing = 1.8f, //Foundation = 3x3
+                itemlist = new Dictionary<string, string> 
+                { 
+                    { "fishtrap.small", "assets/prefabs/deployable/survivalfishtrap/survivalfishtrap.deployed.prefab" },
+                    { "water.catcher.small", "assets/prefabs/deployable/water catcher/water_catcher_small.prefab" },
+                    { "furnace.large", "assets/prefabs/deployable/furnace.large/furnace.large.prefab" },
+                    { "refinery", "assets/prefabs/deployable/oil refinery/refinery_small_deployed.prefab" }
+                },
+            };
+        }
+
+        protected override void LoadDefaultConfig()
+        {
+            Config.Clear();
+            Config.WriteObject(GetDefaultConfig(), true);
+            config = Config.ReadObject<PluginConfig>();
+        }
+        protected override void SaveConfig()
+        {
+            Config.WriteObject(config, true);
+        }
         #endregion
 
         #region Hooks
         void Init()
         {
             permission.RegisterPermission(perm, this);
+            config = Config.ReadObject<PluginConfig>();
+            if (config == null)
+            {
+                LoadDefaultConfig();
+            }
         }
 
         private void OnServerInitialized()
         {
             foreach (var PersonalFarmEntity in GameObject.FindObjectsOfType<BaseEntity>())
             {
-                if (PersonalFarmEntity.name == "PersonalFarm")
+                if (PersonalFarmEntity.name == "PersonalFarm") //Set name so can keep track of placed items
                 {
                     if (PersonalFarmEntity.GetComponent<PersonalFarmAddon>() == null)
                     {
@@ -33,6 +71,12 @@ namespace Oxide.Plugins
                     }
                 }
             }
+        }
+
+        void Unload()
+        {
+            if (config != null)
+                config = null;
         }
 
         private void OnPlayerInput(BasePlayer player, InputState input)
@@ -46,11 +90,13 @@ namespace Oxide.Plugins
             {
                 return;
             }
-            if (heldEntity.skin != 0)
-             {
+            if (heldEntity.skin != 0) //Check skin to make sure its not item used elsewhere
+            {
                 return;
-             }
-            foreach (KeyValuePair<string, string> shortname in PlaceAnywhere)
+            }
+
+            //Check if item in list
+            foreach (KeyValuePair<string, string> shortname in config.itemlist)
             {
                 if (heldEntity.info.shortname.Contains(shortname.Key))
                 {
@@ -66,51 +112,9 @@ namespace Oxide.Plugins
                 }
             }
         }
-
-        //Add back in pumpjacks
-        private void OnEntityKill(SurveyCharge surveyCharge)
-        {
-            if (surveyCharge == null || surveyCharge.net == null) return;
-            ModifyResourceDeposit(surveyCharge.transform.position, surveyCharge.OwnerID);
-        }
-
-        private void ModifyResourceDeposit(Vector3 checkPosition, ulong playerID)
-        {
-            NextTick(() =>
-            {
-                var surveyCraterList = Pool.GetList<SurveyCrater>();
-                Vis.Entities(checkPosition, 1f, surveyCraterList, Rust.Layers.Mask.Default);
-                foreach (var surveyCrater in surveyCraterList)
-                {
-                    if (UnityEngine.Random.Range(0f, 100f) < 40)
-                    {
-                        Vector3 CraterPos = surveyCrater.transform.position;
-                        CraterPos.y -= 0.07f;
-                        var oilCrater = GameManager.server.CreateEntity(PREFAB_CRATER_OIL, CraterPos) as SurveyCrater;
-                        if (oilCrater == null) continue;
-                        surveyCrater.Kill();
-                        oilCrater.OwnerID = playerID;
-                        oilCrater.Spawn();
-                        var deposit = ResourceDepositManager.GetOrCreate(oilCrater.transform.position);
-                        if (deposit != null)
-                        {
-                            deposit._resources.Clear();
-                            int amount = UnityEngine.Random.Range(50, 500);
-                            float workNeeded = 45f / UnityEngine.Random.Range(10, 40);
-                            var crudeItemDef = ItemManager.FindItemDefinition("crude.oil");
-                            if (crudeItemDef != null)
-                            {
-                                deposit.Add(crudeItemDef, 1, amount, workNeeded, ResourceDepositManager.ResourceDeposit.surveySpawnType.ITEM, true);
-                            }
-                        }
-                    }
-                }
-                Pool.FreeList(ref surveyCraterList);
-            });
-        }
-        //
         #endregion
 
+        #region Code
         private bool PlaceItem(BasePlayer player, string Selected)
         {
             RaycastHit rhit;
@@ -123,6 +127,7 @@ namespace Oxide.Plugins
             {
                 return false;
             }
+            //Allow place on floor and foundation
             if (rhit.distance > 5f || (!entity.ShortPrefabName.Contains("floor") && !entity.ShortPrefabName.Contains("foundation")))
             {
                 return false;
@@ -133,7 +138,7 @@ namespace Oxide.Plugins
                 return false;
             }
 
-            if (CanPlace(rhit.point, itemspacing))
+            if (CanPlace(rhit.point, config.itemspacing))
             {
                 newentity.transform.position = rhit.point;
                 newentity.OwnerID = player.userID;
@@ -152,25 +157,26 @@ namespace Oxide.Plugins
 
         private bool CanPlace(Vector3 pos, float radius)
         {
+            //Check if can place with in spacing limits
             var hits = Physics.SphereCastAll(pos, radius, Vector3.up);
             foreach (var hit in hits)
             {
                 if (hit.GetEntity() != null)
                 {
-                    if (hit.GetEntity().ToString().Contains("wall"))
+                    if (hit.GetEntity().ToString().Contains("wall")) //Stop playing too close to a wall.
                     {
                         return false;
                     }
-                    foreach (KeyValuePair<string, string> Itemcheck in PlaceAnywhere)
+                    foreach (KeyValuePair<string, string> Itemcheck in config.itemlist)
                     {
                         if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
                             return false;
                     }
                 }
             }
-
             return true;
         }
+        #endregion
 
         #region Scripts
         private class PersonalFarmAddon : MonoBehaviour
@@ -194,13 +200,7 @@ namespace Oxide.Plugins
 
             private void GroundMissing()
             {
-                this.DoDestroy();
-            }
-
-            public void DoDestroy()
-            {
-                var entity = FarmEntity;
-                try { entity.Kill(); } catch { }
+                try { FarmEntity.Kill(); } catch { }
             }
         }
         #endregion
