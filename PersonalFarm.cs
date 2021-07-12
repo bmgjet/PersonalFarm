@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Facepunch;
 using Newtonsoft.Json;
+using Oxide.Core;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -11,6 +12,7 @@ namespace Oxide.Plugins
         #region Declarations
         const string perm = "PersonalFarm.use";
         private static PluginConfig config;
+        private static SaveData _data;
         #endregion
 
         #region Configuration
@@ -45,12 +47,32 @@ namespace Oxide.Plugins
         {
             Config.WriteObject(config, true);
         }
+
+        private void WriteSaveData() =>
+        Interface.Oxide.DataFileSystem.WriteObject(Name, _data);
+
+        class SaveData
+        {
+            public List<uint> PlacedEntitys = new List<uint>();
+        }
         #endregion
 
         #region Hooks
         void Init()
         {
             permission.RegisterPermission(perm, this);
+
+            if (!Interface.Oxide.DataFileSystem.ExistsDatafile(Name))
+            {
+                Interface.Oxide.DataFileSystem.GetDatafile(Name).Save();
+            }
+
+            _data = Interface.Oxide.DataFileSystem.ReadObject<SaveData>(Name);
+            if (_data == null)
+            {
+                WriteSaveData();
+            }
+
             config = Config.ReadObject<PluginConfig>();
             if (config == null)
             {
@@ -58,15 +80,26 @@ namespace Oxide.Plugins
             }
         }
 
+        private void OnServerSave()
+        {
+            WriteSaveData();
+        }
+
+        private void OnNewSave(string filename)
+        {
+            _data.PlacedEntitys.Clear();
+            WriteSaveData();
+        }
+
         private void OnServerInitialized()
         {
-            foreach (var PersonalFarmEntity in GameObject.FindObjectsOfType<BaseEntity>())
+            foreach (var PersonalFarmEntity in BaseNetworkable.serverEntities)
             {
-                if (PersonalFarmEntity.name == "PersonalFarm") //Set name so can keep track of placed items
+                if (_data.PlacedEntitys.Contains(PersonalFarmEntity.net.ID))
                 {
                     if (PersonalFarmEntity.GetComponent<PersonalFarmAddon>() == null)
                     {
-                        Puts("Found PersonalFarm Entity " + PersonalFarmEntity.ToString() + " " + PersonalFarmEntity.OwnerID.ToString() + " Adding Component");
+                        Puts("Found PersonalFarm Entity " + PersonalFarmEntity.ToString() + " " + PersonalFarmEntity.gameObject.ToBaseEntity().OwnerID.ToString() + " Adding Component");
                         PersonalFarmEntity.gameObject.AddComponent<PersonalFarmAddon>();
                     }
                 }
@@ -75,8 +108,13 @@ namespace Oxide.Plugins
 
         void Unload()
         {
+            WriteSaveData();
+            _data.PlacedEntitys = null;
             if (config != null)
                 config = null;
+
+            if (_data != null)
+                _data = null;
         }
 
         private void OnPlayerInput(BasePlayer player, InputState input)
@@ -142,10 +180,9 @@ namespace Oxide.Plugins
             {
                 newentity.transform.position = rhit.point;
                 newentity.OwnerID = player.userID;
-                newentity.name = "PersonalFarm";
                 newentity.gameObject.AddComponent<PersonalFarmAddon>();
                 newentity.Spawn();
-
+                _data.PlacedEntitys.Add(newentity.net.ID);
                 return true;
             }
             else
@@ -182,29 +219,44 @@ namespace Oxide.Plugins
         private class PersonalFarmAddon : MonoBehaviour
         {
             private BaseEntity FarmEntity;
-            
+            private BaseNetworkable networkid;
 
             private void Awake()
             {
                 FarmEntity = GetComponent<BaseEntity>();
+                networkid = GetComponent<BaseNetworkable>();
                 InvokeRepeating("CheckGround", 5f, 5f);
-                FarmEntity.name = "PersonalFarm";
             }
 
             private void CheckGround()
             {
-                RaycastHit rhit;
-                var cast = Physics.Raycast(FarmEntity.transform.position + new Vector3(0, 0.1f, 0), Vector3.down,
-                    out rhit, 4f, LayerMask.GetMask("Terrain", "Construction"));
-                var distance = cast ? rhit.distance : 3f;
-                if (distance > 0.2f) { GroundMissing(); }
-            }
+                if (FarmEntity == null || networkid == null) return;
+                try
+                {
+                    RaycastHit rhit;
+                    var cast = Physics.Raycast(FarmEntity.transform.position + new Vector3(0, 0.1f, 0), Vector3.down,
+                        out rhit, 1f, LayerMask.GetMask("Terrain", "Construction"));
+                    var distance = cast ? rhit.distance : 1f;
+                    if (distance > 0.2f)
+                    {
 
-            private void GroundMissing()
-            {
-                try { FarmEntity.Kill(); } catch { }
+                        if (_data.PlacedEntitys != null)
+                        {
+                            if (_data.PlacedEntitys.Contains(networkid.net.ID))
+                            {
+                                _data.PlacedEntitys.Remove(networkid.net.ID);
+                            }
+                        }
+                        FarmEntity.Kill();
+                        CancelInvoke("CheckGround");
+                    }
+                }
+                catch
+                {
+                    //Try catch for rare null reference error if item is remove halfway though a check. 
+                }
             }
+            #endregion
         }
-        #endregion
     }
 }
