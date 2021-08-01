@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("PersonalFarm", "bmgjet", "1.0.4")]
+    [Info("PersonalFarm", "bmgjet", "1.0.6")]
     class PersonalFarm : RustPlugin
     {
         #region Declarations
@@ -170,14 +170,17 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-            var newentity = GameManager.server.CreateEntity(Selected);
-            if (newentity == null)
-            {
-                return false;
-            }
 
             if (CanPlace(rhit.point, config.itemspacing))
             {
+                Quaternion q = new Quaternion();
+                q = player.eyes.rotation;
+                q.Set(0, q.y, 0, q.w);
+                var newentity = GameManager.server.CreateEntity(Selected, rhit.point, q, true);
+                if (newentity == null)
+                {
+                    return false;
+                }
                 newentity.transform.position = rhit.point;
                 newentity.OwnerID = player.userID;
                 newentity.gameObject.AddComponent<PersonalFarmAddon>();
