@@ -136,7 +136,7 @@ namespace Oxide.Plugins
             //Check if item in list
             foreach (KeyValuePair<string, string> shortname in config.itemlist)
             {
-                if (heldEntity.info.shortname.Contains(shortname.Key))
+                if (heldEntity.info.shortname == (shortname.Key))
                 {
                     if (PlaceItem(player, shortname.Value))
                     {
@@ -170,17 +170,17 @@ namespace Oxide.Plugins
             {
                 return false;
             }
+            Quaternion q = new Quaternion();
+            q = player.eyes.rotation;
+            q.Set(0, q.y, 0, q.w);
+            var newentity = GameManager.server.CreateEntity(Selected, rhit.point, q, true);
+            if (newentity == null)
+            {
+                return false;
+            }
 
             if (CanPlace(rhit.point, config.itemspacing))
             {
-                Quaternion q = new Quaternion();
-                q = player.eyes.rotation;
-                q.Set(0, q.y, 0, q.w);
-                var newentity = GameManager.server.CreateEntity(Selected, rhit.point, q, true);
-                if (newentity == null)
-                {
-                    return false;
-                }
                 newentity.transform.position = rhit.point;
                 newentity.OwnerID = player.userID;
                 newentity.gameObject.AddComponent<PersonalFarmAddon>();
@@ -209,7 +209,7 @@ namespace Oxide.Plugins
                     }
                     foreach (KeyValuePair<string, string> Itemcheck in config.itemlist)
                     {
-                        if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
+                        if (hit.GetEntity().ToString() == (Itemcheck.Key))
                             return false;
                     }
                 }
