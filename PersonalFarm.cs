@@ -1,12 +1,11 @@
 using System.Collections.Generic;
-using Facepunch;
 using Newtonsoft.Json;
 using Oxide.Core;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("PersonalFarm", "bmgjet", "1.0.6")]
+    [Info("PersonalFarm", "bmgjet", "1.0.7")]
     class PersonalFarm : RustPlugin
     {
         #region Declarations
@@ -53,7 +52,7 @@ namespace Oxide.Plugins
 
         class SaveData
         {
-            public List<uint> PlacedEntitys = new List<uint>();
+            public List<ulong> PlacedEntitys = new List<ulong>();
         }
         #endregion
 
@@ -95,7 +94,7 @@ namespace Oxide.Plugins
         {
             foreach (var PersonalFarmEntity in BaseNetworkable.serverEntities)
             {
-                if (_data.PlacedEntitys.Contains(PersonalFarmEntity.net.ID))
+                if (_data.PlacedEntitys.Contains(PersonalFarmEntity.net.ID.Value))
                 {
                     if (PersonalFarmEntity.GetComponent<PersonalFarmAddon>() == null)
                     {
@@ -136,7 +135,7 @@ namespace Oxide.Plugins
             //Check if item in list
             foreach (KeyValuePair<string, string> shortname in config.itemlist)
             {
-                if (heldEntity.info.shortname == (shortname.Key))
+                if (heldEntity.info.shortname.Contains(shortname.Key))
                 {
                     if (PlaceItem(player, shortname.Value))
                     {
@@ -170,22 +169,22 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-            Quaternion q = new Quaternion();
-            q = player.eyes.rotation;
-            q.Set(0, q.y, 0, q.w);
-            var newentity = GameManager.server.CreateEntity(Selected, rhit.point, q, true);
-            if (newentity == null)
-            {
-                return false;
-            }
 
             if (CanPlace(rhit.point, config.itemspacing))
             {
+                Quaternion q = new Quaternion();
+                q = player.eyes.rotation;
+                q.Set(0, q.y, 0, q.w);
+                var newentity = GameManager.server.CreateEntity(Selected, rhit.point, q, true);
+                if (newentity == null)
+                {
+                    return false;
+                }
                 newentity.transform.position = rhit.point;
                 newentity.OwnerID = player.userID;
                 newentity.gameObject.AddComponent<PersonalFarmAddon>();
                 newentity.Spawn();
-                _data.PlacedEntitys.Add(newentity.net.ID);
+                _data.PlacedEntitys.Add(newentity.net.ID.Value);
                 return true;
             }
             else
@@ -209,7 +208,7 @@ namespace Oxide.Plugins
                     }
                     foreach (KeyValuePair<string, string> Itemcheck in config.itemlist)
                     {
-                        if (hit.GetEntity().ToString() == (Itemcheck.Key))
+                        if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
                             return false;
                     }
                 }
@@ -245,9 +244,9 @@ namespace Oxide.Plugins
 
                         if (_data.PlacedEntitys != null)
                         {
-                            if (_data.PlacedEntitys.Contains(networkid.net.ID))
+                            if (_data.PlacedEntitys.Contains(networkid.net.ID.Value))
                             {
-                                _data.PlacedEntitys.Remove(networkid.net.ID);
+                                _data.PlacedEntitys.Remove(networkid.net.ID.Value);
                             }
                         }
                         FarmEntity.Kill();
