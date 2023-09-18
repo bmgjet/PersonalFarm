@@ -5,13 +5,14 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("PersonalFarm", "bmgjet", "1.0.7")]
+    [Info("PersonalFarm", "bmgjet", "1.0.8")]
     class PersonalFarm : RustPlugin
     {
         #region Declarations
         const string perm = "PersonalFarm.use";
         private static PluginConfig config;
         private static SaveData _data;
+        const int layerMask = Rust.Layers.Mask.Terrain | Rust.Layers.Mask.Construction;
         #endregion
 
         #region Configuration
@@ -103,6 +104,7 @@ namespace Oxide.Plugins
                     }
                 }
             }
+            timer.Every(0.1f, LoopPlayers); // might want to change this interval
         }
 
         void Unload()
@@ -116,35 +118,33 @@ namespace Oxide.Plugins
                 _data = null;
         }
 
-        private void OnPlayerInput(BasePlayer player, InputState input)
+        void LoopPlayers() // removed OnPlayerInput hook as it's very expensive
         {
-            if (!permission.UserHasPermission(player.UserIDString, perm) || !input.WasJustPressed(BUTTON.FIRE_PRIMARY) || !player.CanBuild())
+            foreach (var player in BasePlayer.activePlayerList)
             {
-                return;
-            }
-            var heldEntity = player.GetActiveItem();
-            if (heldEntity == null)
-            {
-                return;
-            }
-            if (heldEntity.skin != 0) //Check skin to make sure its not item used elsewhere
-            {
-                return;
-            }
-
-            //Check if item in list
-            foreach (KeyValuePair<string, string> shortname in config.itemlist)
-            {
-                if (heldEntity.info.shortname.Contains(shortname.Key))
+                if (!player.svActiveItemID.IsValid || !permission.UserHasPermission(player.UserIDString, perm) || !player.serverInput.WasJustPressed(BUTTON.FIRE_PRIMARY)) // WasJustPressed might also require IsDown and/or IsDown WasDown instead
                 {
-                    if (PlaceItem(player, shortname.Value))
+                    continue;
+                }
+                var item = player.GetActiveItem();
+                if (item == null)
+                {
+                    continue;
+                }
+                if (item.skin != 0) //Check skin to make sure its not item used elsewhere
+                {
+                    continue;
+                }
+                //Check if item in list
+                foreach (var shortname in config.itemlist)
+                {
+                    if (item.info.shortname.Contains(shortname.Key))
                     {
-                        player.inventory.Take(null, heldEntity.info.itemid, 1);
-                        return;
-                    }
-                    else
-                    {
-                        return;
+                        if (player.CanBuild() && PlaceItem(player, shortname.Value)) // check CanBuild at last possible chance to minimize impact on performance
+                        {
+                            item.UseItem(1);
+                        }
+                        break;
                     }
                 }
             }
@@ -154,13 +154,7 @@ namespace Oxide.Plugins
         #region Code
         private bool PlaceItem(BasePlayer player, string Selected)
         {
-            RaycastHit rhit;
-            if (!Physics.Raycast(player.eyes.HeadRay(), out rhit))
-            {
-                return false;
-            }
-            var entity = rhit.GetEntity();
-            if (entity == null)
+            if (!Physics.Raycast(player.eyes.HeadRay(), out var rhit) || rhit.GetEntity() is not BaseEntity entity)
             {
                 return false;
             }
@@ -169,11 +163,9 @@ namespace Oxide.Plugins
             {
                 return false;
             }
-
             if (CanPlace(rhit.point, config.itemspacing))
             {
-                Quaternion q = new Quaternion();
-                q = player.eyes.rotation;
+                Quaternion q = player.eyes.rotation;
                 q.Set(0, q.y, 0, q.w);
                 var newentity = GameManager.server.CreateEntity(Selected, rhit.point, q, true);
                 if (newentity == null)
@@ -200,15 +192,16 @@ namespace Oxide.Plugins
             var hits = Physics.SphereCastAll(pos, radius, Vector3.up);
             foreach (var hit in hits)
             {
-                if (hit.GetEntity() != null)
+                if (hit.GetEntity() is BaseEntity ent)
                 {
-                    if (hit.GetEntity().ToString().Contains("wall")) //Stop playing too close to a wall.
+                    var str = ent.ToString();
+                    if (str.Contains("wall")) //Stop playing too close to a wall.
                     {
                         return false;
                     }
                     foreach (KeyValuePair<string, string> Itemcheck in config.itemlist)
                     {
-                        if (hit.GetEntity().ToString().Contains(Itemcheck.Key))
+                        if (str.Contains(Itemcheck.Key))
                             return false;
                     }
                 }
@@ -221,41 +214,34 @@ namespace Oxide.Plugins
         private class PersonalFarmAddon : MonoBehaviour
         {
             private BaseEntity FarmEntity;
-            private BaseNetworkable networkid;
+            private bool isDestroyed;
 
             private void Awake()
             {
                 FarmEntity = GetComponent<BaseEntity>();
-                networkid = GetComponent<BaseNetworkable>();
                 InvokeRepeating("CheckGround", 5f, 5f);
             }
 
-            private void CheckGround()
+            private void CheckGround() // fixed NRE and handle destroy
             {
-                if (FarmEntity == null || networkid == null) return;
-                try
+                if (isDestroyed)
                 {
-                    RaycastHit rhit;
-                    var cast = Physics.Raycast(FarmEntity.transform.position + new Vector3(0, 0.1f, 0), Vector3.down,
-                        out rhit, 1f, LayerMask.GetMask("Terrain", "Construction"));
-                    var distance = cast ? rhit.distance : 1f;
-                    if (distance > 0.2f)
-                    {
-
-                        if (_data.PlacedEntitys != null)
-                        {
-                            if (_data.PlacedEntitys.Contains(networkid.net.ID.Value))
-                            {
-                                _data.PlacedEntitys.Remove(networkid.net.ID.Value);
-                            }
-                        }
-                        FarmEntity.Kill();
-                        CancelInvoke("CheckGround");
-                    }
+                    return;
                 }
-                catch
+                if (!FarmEntity.IsValid() || FarmEntity.IsDestroyed)
                 {
-                    //Try catch for rare null reference error if item is remove halfway though a check. 
+                    isDestroyed = true;
+                    Destroy(this);
+                    return;
+                }
+                var cast = Physics.Raycast(FarmEntity.transform.position + new Vector3(0, 0.1f), Vector3.down, out var rhit, 1f, layerMask);
+                var distance = cast ? rhit.distance : 1f;
+                if (distance > 0.2f)
+                {
+                    isDestroyed = true;
+                    _data.PlacedEntitys?.Remove(FarmEntity.net.ID.Value);
+                    FarmEntity.Kill();
+                    Destroy(this);
                 }
             }
             #endregion
